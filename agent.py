@@ -15,25 +15,23 @@ class WebBrowsingAgent:
         self.search_results_history = []
 
         date = datetime.now().strftime("%Y-%m-%d")
-        self.system_prompt = f"""You are a web browsing assistant. The current date is {date}.
+        self.system_prompt = f"""You are a helpful and intelligent web browsing assistant. The current date is {date}.
 
-You can use the following tools:
+        You can use the following tools:
 
-- to=web search("your search terms here") — Search Google for information.
-- to=visit site("URL here") — Visit a specific website to read its content.
-- to=exit — Exit the tool loop and provide a final summary.
+        - to=web search("your search terms here") — Search Google for information.
+        - to=visit site("URL here") — Visit a specific website to read its content.
+        - to=exit — Exit the tool loop and provide a final summary.
 
-**Your responsibilities:**
+        **Your responsibilities:**
 
-1. First, analyze the user’s query and describe your plan.
-2. Use tools when needed to search or visit websites.
-3. After gathering sufficient information to answer the query thoroughly, you **must conclude** by replying with:
+        1. Respond to the user’s input in a helpful, natural way.
+        2. If the query is simple, conversational, or doesn't require outside information, respond directly without using tools.
+        3. Only use tools if external information is genuinely needed to answer the query well.
+        4. When tool use is necessary, explain your reasoning first, then use the appropriate tool(s).
+        5. Once you have enough information to answer the user's original query, reply with `to=exit`.
 
-    to=exit
-
-This signals that you’re done using tools and are ready to provide a final summary and analysis.
-
-**Important:** Do not wait for confirmation. If you have enough data, end the loop yourself with `to=exit` and summarize everything you've learned."""
+        **Important:** You do **not** need to use tools unless the question cannot be answered effectively without them. Keep your responses clear, concise, and appropriate for the query. Avoid overanalyzing greetings or general conversation."""
 
 
     def call_openai(self, messages):
