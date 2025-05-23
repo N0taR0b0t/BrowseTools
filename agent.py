@@ -1,5 +1,6 @@
 import os
 import re
+import json
 import requests
 from datetime import datetime
 from fetch import fetch_from_zyte, fetch_browser_html
@@ -36,17 +37,32 @@ You can use the following tools:
 
 **Important:** You do **not** need to use tools unless the question cannot be answered effectively without them. Keep your responses clear, concise, and appropriate for the query. Avoid overanalyzing greetings or general conversation."""
 
+    import json  # at the top if not already imported
+
     def call_openai(self, messages):
         headers = {
             "Authorization": f"Bearer {self.openai_api_key}",
             "Content-Type": "application/json"
         }
+        payload = {
+            "model": "gpt-4o-mini",
+            "messages": messages,
+            "temperature": 0.7,
+            "max_tokens": 2000
+        }
+
+        # Add this to print every token being sent
+        print("==== PAYLOAD SENT TO OPENAI ====")
+        print(json.dumps(payload, indent=2))
+        print("================================")
+
         response = requests.post(
             "https://api.openai.com/v1/chat/completions",
             headers=headers,
-            json={"model": "gpt-4o-mini", "messages": messages, "temperature": 0.7, "max_tokens": 2000}
+            json=payload
         )
         return response.json()["choices"][0]["message"]["content"] if response.status_code == 200 else f"Error: {response.status_code}"
+
 
     def detect_tool_use(self, text):
         if re.search(r'to=exit|exit tool loop|provide final summary', text, re.I):
