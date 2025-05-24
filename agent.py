@@ -25,13 +25,13 @@ You can use the following tools:
 
 **Your responsibilities:**
 
-1. First, analyze the user’s query and describe your plan.
+1. First, consider the user’s query and concisely describe your plan.
 2. Use tools when needed to search or visit websites.
-3. After gathering sufficient information to answer the query thoroughly, you **must conclude** by replying with:
+3. After gathering sufficient information to answer the query, you **must first conclude** by replying with:
 
     to=exit
 
-This signals that you’re done using tools and are ready to provide a final summary and analysis.
+This signals that you’re done using tools, you must provide a thorough final summary and analysis.
 
 **Important:** Do not wait for confirmation. If you have enough data, end the loop yourself with `to=exit` and summarize everything you've learned."""
 
@@ -126,7 +126,7 @@ This signals that you’re done using tools and are ready to provide a final sum
     def run_conversation(self, user_query):
         messages = [
             {"role": "system", "content": self.system_prompt},
-            {"role": "user", "content": f"Query: {user_query}\n\nFirst, analyze this query and explain your research approach."}
+            {"role": "user", "content": f"Query: {user_query}\n\nFirst, consider this query and explain your research approach in one or two sentences."}
         ]
 
         print(f"User: {user_query}\n")
@@ -140,7 +140,7 @@ This signals that you’re done using tools and are ready to provide a final sum
             tool_type, param = self.detect_tool_use(response)
 
             if tool_type == "exit":
-                final = f"Based on gathered information, summarize the query: {user_query}\n{self.get_context_summary()}"
+                final = f"Use the gathered information to provide a comprehensive analysis: {user_query}\n{self.get_context_summary()}"
                 messages.append({"role": "user", "content": final})
                 print(f"Final Summary: {self.call_openai(messages)}")
                 break
@@ -151,6 +151,6 @@ This signals that you’re done using tools and are ready to provide a final sum
                 messages.append({"role": "user", "content": f"Search results for '{param}':\n{formatted}"})
             elif tool_type == "visit":
                 content = self.visit_website(param)
-                messages.append({"role": "user", "content": f"Content from {param}:\n{content}"})
+                messages.append({"role": "user", "content": f"Write one sentence to describe this content from {param}:\n{content}"})
             else:
                 messages.append({"role": "user", "content": "Continue your analysis or use tools as needed."})
