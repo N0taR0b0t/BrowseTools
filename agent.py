@@ -54,15 +54,16 @@ This signals that you’re done using tools and are ready to provide a final sum
 
         # Detect web search queries
         if match := re.search(
-            r'to=web\s+search\("([^"]+)"\)|search for[:\s]+["\']?([^"\'\n]+)', text, re.I
+            #r'to=web\s+search\("([^"]+)"\)|search for[:\s]+["\']?([^"\'\n]+)', text, re.I
+            r'to=web\s+search\("([^"]+)"\)', text, re.I
         ):
             return "search", match.group(1) or match.group(2)
 
         # Detect valid URLs for visiting
         if match := re.search(
             r'to=visit\s+site\("((?:https?|ftp)://[^\s"\')]+)"\)'
-            r'|visit[:\s]+["\']?((?:https?|ftp)://[^\s"\')]+)["\']?'
-            r'|open url[:\s]+["\']?((?:https?|ftp)://[^\s"\')]+)["\']?',
+            r'|visit[:\s]+["\']?((?:https?|ftp)://[^\s"\')]+)["\']?',
+            #r'|open url[:\s]+["\']?((?:https?|ftp)://[^\s"\')]+)["\']?',
             text, re.I
         ):
             return "visit", match.group(1) or match.group(2) or match.group(3)
