@@ -1,2 +1,13 @@
 .DS_Store
 *.pyc
+/chroma-env/bin
+*.so
+/chroma-env/lib/python3.11/site-packages/_distutils_hack
+/chroma-env/lib/python3.11/site-packages/annotated_types-0.7.0.dist-info
+/chroma-env/lib/python3.11
+/chroma_db/0010091f-0b7f-484b-bf74-fff302173637
+/chroma_db
+/chroma_test_db/7d6a78ec-60c5-4c31-834d-28a6f8a617f5
+/chroma-env/share/man/man1
+/chroma-env
+/chroma_test_db
