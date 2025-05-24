@@ -1,6 +1,5 @@
 import os
 import re
-import json
 import requests
 from datetime import datetime
 from fetch import fetch_from_zyte, fetch_browser_html
@@ -16,7 +15,7 @@ class WebBrowsingAgent:
         self.search_results_history = []
 
         date = datetime.now().strftime("%Y-%m-%d")
-        self.system_prompt = f"""You are a helpful and intelligent web browsing assistant. The current date is {date}.
+        self.system_prompt = f"""You are a web browsing assistant. The current date is {date}.
 
 You can use the following tools:
 
@@ -26,51 +25,40 @@ You can use the following tools:
 
 **Your responsibilities:**
 
-1. Respond to the user’s input in a helpful, natural way.
-2. If the query is simple, conversational, or doesn't require outside information, respond directly without using tools.
-3. Use tools when external information is needed or requested.
-4. When using tools, explain your reasoning first in once sentence.
-5. Once you have enough information to answer the user's original query, reply with `to=exit`.
-6. Once you have used `to=search`, you must use no less than one `to=visit` before using `to=exit`.
-7. List your sources and references.
+1. First, analyze the user’s query and describe your plan.
+2. Use tools when needed to search or visit websites.
+3. After gathering sufficient information to answer the query thoroughly, you **must conclude** by replying with:
 
+    to=exit
 
-**Important:** You do **not** need to use tools unless the question cannot be answered effectively without them. Keep your responses clear, concise, and appropriate for the query. Avoid overanalyzing greetings or general conversation."""
+This signals that you’re done using tools and are ready to provide a final summary and analysis.
 
-    import json  # at the top if not already imported
+**Important:** Do not wait for confirmation. If you have enough data, end the loop yourself with `to=exit` and summarize everything you've learned."""
+
 
     def call_openai(self, messages):
         headers = {
             "Authorization": f"Bearer {self.openai_api_key}",
             "Content-Type": "application/json"
         }
-        payload = {
-            "model": "gpt-4o-mini",
-            "messages": messages,
-            "temperature": 0.7,
-            "max_tokens": 2000
-        }
-
-        # Add this to print every token being sent
-        print("==== PAYLOAD SENT TO OPENAI ====")
-        print(json.dumps(payload, indent=2))
-        print("================================")
-
         response = requests.post(
             "https://api.openai.com/v1/chat/completions",
             headers=headers,
-            json=payload
+            json={"model": "gpt-4o-mini", "messages": messages, "temperature": 0.7, "max_tokens": 2000}
         )
         return response.json()["choices"][0]["message"]["content"] if response.status_code == 200 else f"Error: {response.status_code}"
-
 
     def detect_tool_use(self, text):
         if re.search(r'to=exit|exit tool loop|provide final summary', text, re.I):
             return "exit", None
 
-        if match := re.search(r'to=web\s+search\("([^"]+)"\)|search for[:\s]+["\']?([^"\'\n]+)', text, re.I):
+        # Detect web search queries
+        if match := re.search(
+            r'to=web\s+search\("([^"]+)"\)|search for[:\s]+["\']?([^"\'\n]+)', text, re.I
+        ):
             return "search", match.group(1) or match.group(2)
 
+        # Detect valid URLs for visiting
         if match := re.search(
             r'to=visit\s+site\("((?:https?|ftp)://[^\s"\')]+)"\)'
             r'|visit[:\s]+["\']?((?:https?|ftp)://[^\s"\')]+)["\']?'
@@ -80,6 +68,7 @@ You can use the following tools:
             return "visit", match.group(1) or match.group(2) or match.group(3)
 
         return None, None
+
 
     def search_google(self, query):
         url = f"https://www.google.com/search?q={query.replace(' ', '+')}"
@@ -133,48 +122,34 @@ You can use the following tools:
         summary += "\n--- END CONTEXT ---\n"
         return summary
 
-    def run_conversation(self, messages):
-        """
-        Accepts an external message list (with history) and manages one turn of assistant response.
-        If tools are needed, continues tool interaction; otherwise, returns the assistant's response.
-        """
-        # Prepend system prompt and optional context
-        full_messages = [{"role": "system", "content": self.system_prompt}]
-        if self.visited_articles:
-            full_messages.append({
-                "role": "system",
-                "content": f"CONTEXT MEMORY: {self.get_context_summary()}"
-            })
-        full_messages.extend(messages)
+    def run_conversation(self, user_query):
+        messages = [
+            {"role": "system", "content": self.system_prompt},
+            {"role": "user", "content": f"Query: {user_query}\n\nFirst, analyze this query and explain your research approach."}
+        ]
 
-        # Call OpenAI with full context
-        response = self.call_openai(full_messages)
-        print(f"Assistant: {response}\n")
+        print(f"User: {user_query}\n")
+        for _ in range(10):
+            if (context := self.get_context_summary()):
+                messages.insert(-1, {"role": "system", "content": f"CONTEXT MEMORY: {context}"})
 
-        tool_type, param = self.detect_tool_use(response)
-        if tool_type == "exit":
-            # User likely wrapped up – provide a summary
-            summary_prompt = {
-                "role": "user",
-                "content": f"Based on gathered information, summarize this session:\n{self.get_context_summary()}"
-            }
-            full_messages.append({"role": "assistant", "content": response})
-            full_messages.append(summary_prompt)
-            summary = self.call_openai(full_messages)
-            print(f"Final Summary: {summary}")
-            return summary
+            response = self.call_openai(messages)
+            print(f"Assistant: {response}\n")
+            messages.append({"role": "assistant", "content": response})
+            tool_type, param = self.detect_tool_use(response)
 
-        elif tool_type == "search":
-            results = self.search_google(param)
-            formatted = self.format_serp_results(results)
-            self.search_results_history.append({'query': param, 'results': formatted})
-            messages.append({"role": "user", "content": f"Search results for '{param}':\n{formatted}"})
-            return self.run_conversation(messages)
-
-        elif tool_type == "visit":
-            content = self.visit_website(param)
-            messages.append({"role": "user", "content": f"Content from {param}:\n{content}"})
-            return self.run_conversation(messages)
-
-        else:
-            return response
+            if tool_type == "exit":
+                final = f"Based on gathered information, summarize the query: {user_query}\n{self.get_context_summary()}"
+                messages.append({"role": "user", "content": final})
+                print(f"Final Summary: {self.call_openai(messages)}")
+                break
+            elif tool_type == "search":
+                results = self.search_google(param)
+                formatted = self.format_serp_results(results)
+                self.search_results_history.append({'query': param, 'results': formatted})
+                messages.append({"role": "user", "content": f"Search results for '{param}':\n{formatted}"})
+            elif tool_type == "visit":
+                content = self.visit_website(param)
+                messages.append({"role": "user", "content": f"Content from {param}:\n{content}"})
+            else:
+                messages.append({"role": "user", "content": "Continue your analysis or use tools as needed."})
