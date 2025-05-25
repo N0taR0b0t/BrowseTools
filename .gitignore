@@ -2,6 +2,7 @@
 browser_html.html
 SERP_cache.db
 zyte_browser_html_cache.db
+*.json
 *.pyc
 /chroma-env/bin
 *.so
