@@ -1,5 +1,7 @@
 .DS_Store
 browser_html.html
+SERP_cache.db
+zyte_browser_html_cache.db
 *.pyc
 /chroma-env/bin
 *.so
