@@ -1,5 +1,6 @@
 import os
 import re
+import json
 import requests
 from datetime import datetime
 from fetch import fetch_from_zyte, fetch_browser_html
@@ -35,18 +36,57 @@ This signals that you’re done using tools, you must provide a thorough final s
 
 **Important:** Do not wait for confirmation. If you have enough data, end the loop yourself with `to=exit` and summarize everything you've learned."""
 
-
     def call_openai(self, messages):
         headers = {
             "Authorization": f"Bearer {self.openai_api_key}",
             "Content-Type": "application/json"
         }
+
+        payload = {
+            "model": "gpt-4o-mini",
+            "messages": messages,
+            "temperature": 0.7,
+            "max_tokens": 2000
+        }
+
         response = requests.post(
             "https://api.openai.com/v1/chat/completions",
             headers=headers,
-            json={"model": "gpt-4o-mini", "messages": messages, "temperature": 0.7, "max_tokens": 2000}
+            json=payload
         )
-        return response.json()["choices"][0]["message"]["content"] if response.status_code == 200 else f"Error: {response.status_code}"
+
+        log_entry = {
+            "timestamp": datetime.now().isoformat(),
+            "start": "=== START OPENAI API CALL ===",
+            "request": payload,
+            "response": {},
+            "end": "=== END OPENAI API CALL ==="
+        }
+
+        try:
+            if response.status_code == 200:
+                response_data = response.json()
+                log_entry["response"] = response_data
+                with open("llm_master_log.json", "a") as f:
+                    json.dump(log_entry, f, indent=2)
+                    f.write("\n")
+                return response_data["choices"][0]["message"]["content"]
+            else:
+                log_entry["response"] = {
+                    "error": f"HTTP {response.status_code}",
+                    "body": response.text
+                }
+                with open("llm_master_log.json", "a") as f:
+                    json.dump(log_entry, f, indent=2)
+                    f.write("\n")
+                return f"Error: {response.status_code}"
+        except Exception as e:
+            log_entry["response"] = {"error": f"Exception: {str(e)}"}
+            with open("llm_master_log.json", "a") as f:
+                json.dump(log_entry, f, indent=2)
+                f.write("\n")
+            return "Error: Exception during OpenAI call"
+
 
     def detect_tool_use(self, text):
         if re.search(r'to=exit|exit tool loop|provide final summary', text, re.I):
@@ -118,8 +158,7 @@ This signals that you’re done using tools, you must provide a thorough final s
             return ""
         summary = "\n\n--- CONTEXT: Previously Visited Articles ---\n"
         for i, article in enumerate(self.visited_articles, 1):
-            preview = " ".join(article['content'].split()[:100])
-            summary += f"\nArticle {i}: {article['url']}\nPreview: {preview}...\n"
+            summary += f"\nArticle {i}: {article['url']}\nFull Content:\n{article['content']}\n"
         summary += "\n--- END CONTEXT ---\n"
         return summary
 
@@ -140,10 +179,20 @@ This signals that you’re done using tools, you must provide a thorough final s
             tool_type, param = self.detect_tool_use(response)
 
             if tool_type == "exit":
-                final = f"Use the gathered information to provide a comprehensive analysis: {user_query}\n{self.get_context_summary()}"
-                messages.append({"role": "user", "content": final})
-                print(f"Final Summary: {self.call_openai(messages)}")
+                # Refresh context and insert it BEFORE the user’s final prompt
+                if (context := self.get_context_summary()):
+                    messages.append({"role": "system", "content": f"CONTEXT MEMORY: {context}"})
+                
+                messages.append({
+                    "role": "user",
+                    "content": f"Use the gathered information to provide a comprehensive analysis: {user_query}"
+                })
+
+                # Call OpenAI and show final output
+                final_summary = self.call_openai(messages)
+                print(f"Final Summary: {final_summary}")
                 break
+
             elif tool_type == "search":
                 results = self.search_google(param)
                 formatted = self.format_serp_results(results)
