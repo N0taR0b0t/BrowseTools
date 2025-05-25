@@ -1,0 +1,12 @@
+digraph {
+	"pipeline_entry.py"
+	"pipeline_entry.py" -> "agent.py"
+	"agent.py"
+	"agent.py" -> "fetch.py"
+	"fetch.py"
+	"fetch.py" -> "config.py"
+	"config.py"
+	"agent.py" -> "html_utils.py"
+	"html_utils.py"
+	"html_utils.py" -> "config.py"
+}
