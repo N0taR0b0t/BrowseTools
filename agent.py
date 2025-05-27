@@ -6,111 +6,91 @@ from datetime import datetime
 from fetch import fetch_from_zyte, fetch_browser_html
 from html_utils import visible_text
 
+
 class WebBrowsingAgent:
+    # ──────────────────────────────────────────────────────────────────────────────
+    # Construction
+    # ──────────────────────────────────────────────────────────────────────────────
     def __init__(self):
         self.openai_api_key = os.getenv("OPENAI_API_KEY")
         if not self.openai_api_key:
             raise ValueError("OPENAI_API_KEY not set")
 
+        date = datetime.now().strftime("%Y-%m-%d")
+        # --- short, explicit prompt ------------------------------------------------
+        self.system_prompt = f"""You are a web browsing assistant. Today is {date}.
+
+        You can use these tools, one at a time:
+        - to=web search("query")  — get search engine results
+        - to=visit site("URL")  — view a website's contents
+        - to=exit  — end tool use and return to conversation
+
+        Your role is to assist naturally and intelligently.
+
+        • When you're done gathering information, use to=exit. Then summarize what you found before continuing the conversation.
+        • During tool use, focus only on searching and visiting—resume chatting only after to=exit.
+        • IMPORTANT: Once you issue `to=web search(...)`, you will be stuck in the browse loop until you use `to=exit`. Do NOT chat again until you do this.
+
+        Use tools only when necessary, but don’t hesitate when the task calls for them."""
+
+        # ──────────────────────────────────────────────────────────────────────────
         self.visited_articles = []
         self.search_results_history = []
 
-        date = datetime.now().strftime("%Y-%m-%d")
-        self.system_prompt = f"""You are a web browsing assistant. The current date is {date}.
-
-You can use the following tools:
-
-- to=web search("your search terms here") — Search Google for information.
-- to=visit site("URL here") — Visit a specific website to read its content.
-- to=exit — Exit the tool loop and provide a final summary.
-
-**Your responsibilities:**
-
-1. First, consider the user’s query and concisely describe your plan.
-2. Use tools when needed to search or visit websites.
-3. After gathering sufficient information to answer the query, you **must first conclude** by replying with:
-
-    to=exit
-
-This signals that you’re done using tools, you must provide a thorough final summary and analysis.
-
-**Important:** Do not wait for confirmation. If you have enough data, end the loop yourself with `to=exit` and summarize everything you've learned."""
-
+    # ──────────────────────────────────────────────────────────────────────────────
+    # OpenAI wrapper
+    # ──────────────────────────────────────────────────────────────────────────────
     def call_openai(self, messages):
         headers = {
             "Authorization": f"Bearer {self.openai_api_key}",
             "Content-Type": "application/json"
         }
-
         payload = {
             "model": "gpt-4o-mini",
             "messages": messages,
             "temperature": 0.7,
             "max_tokens": 2000
         }
-
         response = requests.post(
             "https://api.openai.com/v1/chat/completions",
             headers=headers,
             json=payload
         )
-
+        # simple logging
         log_entry = {
             "timestamp": datetime.now().isoformat(),
-            "start": "=== START OPENAI API CALL ===",
             "request": payload,
-            "response": {},
-            "end": "=== END OPENAI API CALL ==="
+            "status": response.status_code
         }
-
-        try:
-            if response.status_code == 200:
-                response_data = response.json()
-                log_entry["response"] = response_data
-                with open("llm_master_log.json", "a") as f:
-                    json.dump(log_entry, f, indent=2)
-                    f.write("\n")
-                return response_data["choices"][0]["message"]["content"]
-            else:
-                log_entry["response"] = {
-                    "error": f"HTTP {response.status_code}",
-                    "body": response.text
-                }
-                with open("llm_master_log.json", "a") as f:
-                    json.dump(log_entry, f, indent=2)
-                    f.write("\n")
-                return f"Error: {response.status_code}"
-        except Exception as e:
-            log_entry["response"] = {"error": f"Exception: {str(e)}"}
+        if response.status_code == 200:
+            ans = response.json()["choices"][0]["message"]["content"]
+            log_entry["assistant"] = ans
             with open("llm_master_log.json", "a") as f:
-                json.dump(log_entry, f, indent=2)
+                json.dump(log_entry, f)
                 f.write("\n")
-            return "Error: Exception during OpenAI call"
+            return ans
+        with open("llm_master_log.json", "a") as f:
+            json.dump(log_entry, f)
+            f.write("\n")
+        return f"Error: {response.status_code}"
 
-
+    # ──────────────────────────────────────────────────────────────────────────────
+    # Tool-use detection
+    # ──────────────────────────────────────────────────────────────────────────────
     def detect_tool_use(self, text):
-        if re.search(r'to=exit|exit tool loop|provide final summary', text, re.I):
+        if re.search(r'\bto=exit\b', text, re.I):
             return "exit", None
-
-        # Detect web search queries
-        if match := re.search(
-            #r'to=web\s+search\("([^"]+)"\)|search for[:\s]+["\']?([^"\'\n]+)', text, re.I
-            r'to=web\s+search\("([^"]+)"\)', text, re.I
+        if m := re.search(r'to=web\s+search\("([^"]+)"\)', text, re.I):
+            return "search", m.group(1)
+        if m := re.search(
+            r'to=visit\s+site\("((?:https?|ftp)://[^\s"\')]+)"\)', text, re.I
         ):
-            return "search", match.group(1) or match.group(2)
-
-        # Detect valid URLs for visiting
-        if match := re.search(
-            r'to=visit\s+site\("((?:https?|ftp)://[^\s"\')]+)"\)'
-            r'|visit[:\s]+["\']?((?:https?|ftp)://[^\s"\')]+)["\']?',
-            #r'|open url[:\s]+["\']?((?:https?|ftp)://[^\s"\')]+)["\']?',
-            text, re.I
-        ):
-            return "visit", match.group(1) or match.group(2) or match.group(3)
-
+            return "visit", m.group(1)
         return None, None
 
-
+    # ──────────────────────────────────────────────────────────────────────────────
+    # Browsing helpers
+    # ──────────────────────────────────────────────────────────────────────────────
     def search_google(self, query):
         url = f"https://www.google.com/search?q={query.replace(' ', '+')}"
         return fetch_from_zyte(url)
@@ -119,87 +99,105 @@ This signals that you’re done using tools, you must provide a thorough final s
         if not serp_data or 'organicResults' not in serp_data:
             return "No search results found."
         return "\n\n".join(
-            f"{i + 1}. **{res.get('title', 'No title')}**\n   URL: {res.get('url', '')}\n   Description: {res.get('snippet', '')}"
-            for i, res in enumerate(serp_data['organicResults'][:5])
+            f"{i+1}. **{r.get('title','No title')}**\n   URL: {r.get('url','')}\n   {r.get('snippet','')}"
+            for i, r in enumerate(serp_data['organicResults'][:5])
         )
 
     def visit_website(self, url):
-        print(f"🌐 Visiting: {url}")
-        for article in self.visited_articles:
-            if article['url'] == url:
-                return article['content']
-
         html = fetch_browser_html(url)
         if not html:
             return "Failed to fetch website content."
         blocks = visible_text(html)
 
-        output_blocks, word_limit, words_printed = [], 650, 0
+        output, limit, used = [], 650, 0
         for block in blocks:
-            block_words = block.split()
-            remaining = word_limit - words_printed
-            if remaining <= 0:
+            words = block.split()
+            if used >= limit:
                 break
-            if len(block_words) > remaining:
-                chunk = " ".join(block_words[:remaining + 30])
-                period_match = list(re.finditer(r"\. ", chunk))
-                trimmed = chunk[:period_match[-1].end()].strip() if period_match else " ".join(block_words[:remaining])
-                output_blocks.append(trimmed)
-                break
-            output_blocks.append(block)
-            words_printed += len(block_words)
-
-        content = "\n\n".join(output_blocks)
-        self.visited_articles.append({'url': url, 'content': content, 'timestamp': datetime.now().isoformat()})
-        return content
+            take = min(len(words), limit - used)
+            segment = " ".join(words[:take])
+            output.append(segment)
+            used += take
+        text = "\n\n".join(output)
+        self.visited_articles.append(
+            {"url": url, "content": text, "timestamp": datetime.now().isoformat()}
+        )
+        return text
 
     def get_context_summary(self):
         if not self.visited_articles:
             return ""
-        summary = "\n\n--- CONTEXT: Previously Visited Articles ---\n"
-        for i, article in enumerate(self.visited_articles, 1):
-            summary += f"\nArticle {i}: {article['url']}\nFull Content:\n{article['content']}\n"
-        summary += "\n--- END CONTEXT ---\n"
-        return summary
+        header = "\n\n--- CONTEXT: Visited Articles ---\n"
+        body = ""
+        for i, art in enumerate(self.visited_articles, 1):
+            body += f"\n{i}. {art['url']}\n{art['content']}\n"
+        return header + body + "\n--- END CONTEXT ---\n"
 
-    def run_conversation(self, user_query):
+    # ──────────────────────────────────────────────────────────────────────────────
+    # Main loop
+    # ──────────────────────────────────────────────────────────────────────────────
+    def run_conversation(self, first_user_query):
         messages = [
             {"role": "system", "content": self.system_prompt},
-            {"role": "user", "content": f"Query: {user_query}\n\nFirst, consider this query and explain your research approach in one or two sentences."}
+            {"role": "user",   "content": first_user_query}
         ]
 
-        print(f"User: {user_query}\n")
-        for _ in range(10):
-            if (context := self.get_context_summary()):
-                messages.insert(-1, {"role": "system", "content": f"CONTEXT MEMORY: {context}"})
+        tool_loop_active = False
 
-            response = self.call_openai(messages)
-            print(f"Assistant: {response}\n")
-            messages.append({"role": "assistant", "content": response})
-            tool_type, param = self.detect_tool_use(response)
+        while True:
+            if tool_loop_active and (ctx := self.get_context_summary()):
+                # pass context only while in tool loop
+                messages.insert(-1, {"role": "system", "content": f"CONTEXT:{ctx}"})
+
+            assistant_reply = self.call_openai(messages)
+            print(f"Assistant: {assistant_reply}\n")
+
+            tool_type, param = self.detect_tool_use(assistant_reply)
+
+            # Enforce tool loop rules
+            if tool_loop_active and tool_type not in ("visit", "exit"):
+                meta_warning = (
+                    "**Warning:** You initiated a tool-use sequence with `to=web search(...)`. "
+                    "You must now follow up with `to=visit site(...)` to read from a result, "
+                    "or `to=exit` to end tool use and summarize before continuing the conversation."
+                )
+                messages.append({"role": "user", "content": meta_warning})
+                continue  # loop back without accepting this assistant reply
+
+            # Accept reply
+            messages.append({"role": "assistant", "content": assistant_reply})
+
+
+            tool_type, param = self.detect_tool_use(assistant_reply)
+
+            # ── handle tool instructions ─────────────────────────────────────────
+            if tool_type == "search":
+                tool_loop_active = True
+                serp = self.search_google(param)
+                formatted = self.format_serp_results(serp)
+                self.search_results_history.append({"query": param, "results": formatted})
+                messages.append({"role": "user",
+                                 "content": f"Search results for '{param}':\n{formatted}"})
+                continue
+
+            if tool_type == "visit":
+                tool_loop_active = True
+                page_text = self.visit_website(param)
+                messages.append({"role": "user",
+                                 "content": f"Content from {param}:\n{page_text}"})
+                continue
 
             if tool_type == "exit":
-                # Refresh context and insert it BEFORE the user’s final prompt
-                if (context := self.get_context_summary()):
-                    messages.append({"role": "system", "content": f"CONTEXT MEMORY: {context}"})
-                
-                messages.append({
-                    "role": "user",
-                    "content": f"Use the gathered information to provide a comprehensive analysis: {user_query}"
-                })
+                tool_loop_active = False
+                # Ask the model to summarise before returning to chat mode
+                messages.append({"role": "user",
+                                 "content": "Please provide a concise summary of what you learned."})
+                summary = self.call_openai(messages)
+                print(f"\n📄 Summary: {summary}\n")
+                messages.append({"role": "assistant", "content": summary})
+                # after summary, fall through to normal chat
+                continue
 
-                # Call OpenAI and show final output
-                final_summary = self.call_openai(messages)
-                print(f"Final Summary: {final_summary}")
-                break
-
-            elif tool_type == "search":
-                results = self.search_google(param)
-                formatted = self.format_serp_results(results)
-                self.search_results_history.append({'query': param, 'results': formatted})
-                messages.append({"role": "user", "content": f"Search results for '{param}':\n{formatted}"})
-            elif tool_type == "visit":
-                content = self.visit_website(param)
-                messages.append({"role": "user", "content": f"Write one sentence to describe this content from {param}:\n{content}"})
-            else:
-                messages.append({"role": "user", "content": "Continue your analysis or use tools as needed."})
+            # ── regular chat turn (no tool call) ────────────────────────────────
+            user_input = input("👤 You: ")
+            messages.append({"role": "user", "content": user_input})
