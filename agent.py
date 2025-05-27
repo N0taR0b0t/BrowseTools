@@ -99,7 +99,7 @@ class WebBrowsingAgent:
         if not serp_data or 'organicResults' not in serp_data:
             return "No search results found."
         return "\n\n".join(
-            f"{i+1}. **{r.get('title','No title')}**\n   URL: {r.get('url','')}\n   {r.get('snippet','')}"
+            f"{i+1}. {r.get('title','-')}\n   URL: {r.get('url','')}\n   {r.get('snippet','')}"
             for i, r in enumerate(serp_data['organicResults'][:5])
         )
 
@@ -127,11 +127,12 @@ class WebBrowsingAgent:
     def get_context_summary(self):
         if not self.visited_articles:
             return ""
-        header = "\n\n--- CONTEXT: Visited Articles ---\n"
+        header = "\nVisited Articles:\n"
         body = ""
         for i, art in enumerate(self.visited_articles, 1):
-            body += f"\n{i}. {art['url']}\n{art['content']}\n"
-        return header + body + "\n--- END CONTEXT ---\n"
+            body += f"\n{i}. {art['url']}\n"
+            #body += f"\n{i}. {art['url']}\n{art['content']}\n"
+        return header + body
 
     # ──────────────────────────────────────────────────────────────────────────────
     # Main loop
@@ -190,10 +191,10 @@ class WebBrowsingAgent:
             if tool_type == "exit":
                 tool_loop_active = False
                 # Ask the model to summarise before returning to chat mode
-                messages.append({"role": "user",
-                                 "content": "Please provide a concise summary of what you learned."})
+                #messages.append({"role": "user",
+                #                 "content": "Please provide a concise summary of what you learned."})
                 summary = self.call_openai(messages)
-                print(f"\n📄 Summary: {summary}\n")
+                #print(f"\n📄 Summary: {summary}\n")
                 messages.append({"role": "assistant", "content": summary})
                 # after summary, fall through to normal chat
                 continue
