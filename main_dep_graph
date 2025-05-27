@@ -1,6 +1,6 @@
 digraph {
-	"pipeline_entry.py"
-	"pipeline_entry.py" -> "agent.py"
+	"main.py"
+	"main.py" -> "agent.py"
 	"agent.py"
 	"agent.py" -> "fetch.py"
 	"fetch.py"
