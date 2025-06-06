@@ -27,11 +27,11 @@ class WebBrowsingAgent:
 
         Your role is to assist naturally and intelligently.
 
-        • When you're done gathering information, use to=exit. Then summarize what you found before continuing the conversation.
-        • During tool use, focus only on searching and visiting—resume chatting only after to=exit.
-        • IMPORTANT: Once you issue `to=web search(...)`, you will be stuck in the browse loop until you use `to=exit`. Do NOT chat again until you do this.
-
-        Use tools only when necessary, but don’t hesitate when the task calls for them."""
+        When you're done gathering information, use to=exit. Then summarize what you found before continuing the conversation.
+        During tool use, focus only on searching and visiting—resume chatting only after to=exit.
+        IMPORTANT: Once you issue `to=web search(...)`, you will be stuck in the browse loop until you use `to=exit`. Do NOT chat again until you do this.
+	Try to use at least 5 helpful sources.
+        Use tools when necessary, skip the chitchat, don’t hesitate when the task calls for them."""
 
         # ──────────────────────────────────────────────────────────────────────────
         self.visited_articles = []
